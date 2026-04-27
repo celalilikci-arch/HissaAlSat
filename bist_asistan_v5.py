@@ -717,7 +717,7 @@ def portfoy_ekle_alis(hisse, alis_tarihi, lot, alis_fiyati, alis_maliyeti):
 # --- YAN MENÜ ---
 with st.sidebar:
     st.header("⚙️ Ayarlar")
-    komisyon_orani = st.number_input("Komisyon (Binde)", min_value=0.0, value=0.5, step=0.1) / 1000
+    komisyon_orani = st.number_input("Komisyon (Binde)", min_value=0.0, value=2.0, step=0.1) / 1000
     bsmv_orani = st.number_input("BSMV (%)", min_value=0.0, value=5.0, step=1.0) / 100
     efektif_komisyon = komisyon_orani * (1 + bsmv_orani)
     st.info(f"Net Kesinti: **%{efektif_komisyon*100:.4f}**")
@@ -725,7 +725,7 @@ with st.sidebar:
 
 # --- ANA EKRAN ---
 st.title("📈 BIST Yatırımcı Asistanı")
-st.caption("606 hisse · Komisyon dahil maliyet · Paçal · Kâr analizi")
+st.caption("586 hisse · Komisyon dahil maliyet · Paçal · Kâr analizi")
 
 tab_alis, tab_satis, tab_portfoy, tab_log = st.tabs(["🟢 Alış", "🔴 Satış", "💼 Portföy", "📋 Log"])
 
@@ -744,7 +744,7 @@ with tab_alis:
         hisse_bilgi_goster(hisse)
         fiyat = st.number_input("Başlangıç Fiyatı (TL)", min_value=0.01, value=100.00, step=0.01, format="%.2f")
         st.caption(f"📌 Tick: **{get_tick_size(fiyat):.2f} TL**")
-        butce = st.number_input("Toplam Bütçe (TL)", min_value=1.0, value=3000000.0, step=1000.0, format="%.2f")
+        butce = st.number_input("Toplam Bütçe (TL)", min_value=1.0, value=10000.0, step=1000.0, format="%.2f")
 
         with st.expander("⚙️ Kademe Ayarları (opsiyonel)"):
             kademe_sayisi = st.number_input("Kademe Sayısı", min_value=1, max_value=20, value=1, key="k1")
@@ -878,11 +878,123 @@ with tab_alis:
 with tab_satis:
     satis_modu = st.radio(
         "İşlem Tipi:",
-        ["💵 Ne Kadar Nakit → Kaç Lot?", "📦 Elimdekini Sat → Ne Geçer?", "📊 Reel Kâr & Faiz Analizi"]
+        ["📂 Portföyümden Sat", "💵 Ne Kadar Nakit → Kaç Lot?", "📦 Elimdekini Sat → Ne Geçer?", "📊 Reel Kâr & Faiz Analizi"]
     )
     st.divider()
 
-    if satis_modu == "💵 Ne Kadar Nakit → Kaç Lot?":
+    if satis_modu == "📂 Portföyümden Sat":
+        acik_poz = [p for p in st.session_state.portfoy if p["durum"] == "Açık"]
+
+        if not acik_poz:
+            st.warning("Portföyünüzde açık pozisyon bulunmuyor. Önce Alış sekmesinden hisse ekleyin.")
+        else:
+            # Açık pozisyonları seçilebilir liste olarak göster
+            poz_etiketleri = {
+                f"{p['hisse']} — {p['firma'][:35]} | {p['lot']} lot | Alış: {para_fmt(p['alis_fiyati'])} ₺ ({p['alis_tarihi']})": p["id"]
+                for p in acik_poz
+            }
+            secim_etiketi = st.selectbox("Satılacak Pozisyon", list(poz_etiketleri.keys()), key="portfoy_satis_sec")
+            secilen_poz_id = poz_etiketleri[secim_etiketi]
+            secilen_poz = next(p for p in st.session_state.portfoy if p["id"] == secilen_poz_id)
+
+            # Hisse bilgisi otomatik göster
+            hisse_bilgi_goster(secilen_poz["hisse"])
+
+            # Lot — otomatik gelir, azaltılabilir
+            maks_lot = secilen_poz["lot"]
+            satis_lot_pf = st.number_input(
+                f"Satılacak Lot (Maks: {maks_lot})",
+                min_value=1, max_value=maks_lot, value=maks_lot, key="pf_satis_lot"
+            )
+            satis_fiyat_pf = st.number_input("Satış Fiyatı (TL)", min_value=0.01, value=float(secilen_poz["alis_fiyati"]), step=0.01, format="%.2f", key="pf_satis_fiyat")
+            st.caption(f"📌 Tick: **{get_tick_size(satis_fiyat_pf, 'up'):.2f} TL**")
+
+            with st.expander("⚙️ Kademe Ayarları (opsiyonel)"):
+                kademe_sayisi_pf = st.number_input("Kademe Sayısı", min_value=1, max_value=20, value=1, key="kpf")
+                fiyat_adimi_pf = st.number_input("Kademeler Arası (Tick)", min_value=1, value=1, key="tpf") if kademe_sayisi_pf > 1 else 0
+                dagilim_pf = st.selectbox("Dağılım", ["Eşit", "Piramit (Çıktıkça Artan)"], key="dpf") if kademe_sayisi_pf > 1 else "Eşit"
+
+            if st.button("📊 Satış Planını Hesapla", type="primary", key="btn_pf_hesap"):
+                agirliklar = [1]*kademe_sayisi_pf if "Eşit" in dagilim_pf else list(range(1, kademe_sayisi_pf+1))
+                toplam_agirlik = sum(agirliklar)
+                plan, toplam_nakit, kalan_lot = [], 0.0, satis_lot_pf
+                kademe_fiyati = satis_fiyat_pf
+                for i in range(kademe_sayisi_pf):
+                    if i > 0: kademe_fiyati = shift_price(kademe_fiyati, fiyat_adimi_pf, "up")
+                    kademe_lot = kalan_lot if i == kademe_sayisi_pf-1 else math.floor(satis_lot_pf*(agirliklar[i]/toplam_agirlik))
+                    if i < kademe_sayisi_pf-1: kalan_lot -= kademe_lot
+                    net = kademe_lot * kademe_fiyati * (1 - efektif_komisyon)
+                    toplam_nakit += net
+                    plan.append({
+                        "Kad.": f"{i+1}",
+                        "Fiyat": para_fmt(kademe_fiyati) + " ₺",
+                        "Lot": kademe_lot,
+                        "Net Gelir": para_fmt(net) + " ₺"
+                    })
+                st.session_state.pending_satis = {
+                    "hisse": secilen_poz["hisse"],
+                    "poz_id": secilen_poz_id,
+                    "toplam_lot": satis_lot_pf,
+                    "toplam_nakit": toplam_nakit,
+                    "ort_fiyat": satis_fiyat_pf,
+                    "plan": plan,
+                    "kaynak": "portfoy"
+                }
+
+            ps = st.session_state.pending_satis
+            if ps and ps.get("poz_id") == secilen_poz_id and ps.get("kaynak") == "portfoy":
+                st.dataframe(pd.DataFrame(ps["plan"]), use_container_width=True, hide_index=True)
+
+                alis_m_goster = secilen_poz["alis_maliyeti"] * (ps["toplam_lot"] / secilen_poz["lot"])
+                net_kar_tahmin = ps["toplam_nakit"] - alis_m_goster
+                st.success(f"**{ps['toplam_lot']} Lot** → **{para_fmt(ps['toplam_nakit'])} TL** net gelir")
+                st.info(f"Tahmini Net Kâr: **{para_fmt(net_kar_tahmin)} TL**")
+
+                st.divider()
+                st.markdown("#### ✅ İşlem Gerçekleşti mi?")
+                gercek_satis_tarih = st.date_input("Satış Tarihi", key="pf_satis_tarih_kayit")
+                gercek_satis_fiyat2 = st.number_input(
+                    "Gerçekleşen Ort. Satış Fiyatı (TL)",
+                    min_value=0.01, value=float(ps["ort_fiyat"]),
+                    format="%.2f", key="pf_satis_gercek_fiyat"
+                )
+
+                if st.button("📁 Satışı Portföye İşle", type="primary", key="btn_pf_satis_kaydet"):
+                    gercek_gelir = ps["toplam_lot"] * gercek_satis_fiyat2 * (1 - efektif_komisyon)
+                    for p in st.session_state.portfoy:
+                        if p["id"] == secilen_poz_id:
+                            if ps["toplam_lot"] == p["lot"]:
+                                # Tümü satıldı — pozisyonu kapat
+                                p["satis_tarihi"] = str(gercek_satis_tarih)
+                                p["satis_fiyati"] = round(gercek_satis_fiyat2, 2)
+                                p["satis_geliri"] = round(gercek_gelir, 2)
+                                p["durum"] = "Kapalı"
+                            else:
+                                # Kısmi satış — mevcut pozisyonu güncelle, kapalı kayıt ekle
+                                kalan = p["lot"] - ps["toplam_lot"]
+                                kalan_maliyet = p["alis_maliyeti"] * (kalan / p["lot"])
+                                # Kapalı kayıt
+                                st.session_state.portfoy.append({
+                                    "id": len(st.session_state.portfoy),
+                                    "hisse": p["hisse"], "firma": p["firma"], "sektor": p["sektor"],
+                                    "alis_tarihi": p["alis_tarihi"], "lot": ps["toplam_lot"],
+                                    "alis_fiyati": p["alis_fiyati"],
+                                    "alis_maliyeti": round(p["alis_maliyeti"] * (ps["toplam_lot"]/p["lot"]), 2),
+                                    "satis_tarihi": str(gercek_satis_tarih),
+                                    "satis_fiyati": round(gercek_satis_fiyat2, 2),
+                                    "satis_geliri": round(gercek_gelir, 2),
+                                    "durum": "Kapalı"
+                                })
+                                # Açık pozisyonu güncelle
+                                p["lot"] = kalan
+                                p["alis_maliyeti"] = round(kalan_maliyet, 2)
+                    log_ekle("SATIŞ (Portföy)", ps["hisse"],
+                             f"{ps['toplam_lot']} lot @ {para_fmt(gercek_satis_fiyat2)} ₺ → Gelir: {para_fmt(gercek_gelir)} ₺")
+                    st.session_state.pending_satis = None
+                    st.success("✅ Satış portföye işlendi!")
+                    st.rerun()
+
+    elif satis_modu == "💵 Ne Kadar Nakit → Kaç Lot?":
         hisse_sat = st.selectbox("Hisse Kodu", options=HISSE_KODLARI, key="s1_hisse")
         hisse_bilgi_goster(hisse_sat)
         fiyat_sat = st.number_input("Satış Fiyatı (TL)", min_value=0.01, value=150.00, step=0.01, format="%.2f")
