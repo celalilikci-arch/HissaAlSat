@@ -725,7 +725,7 @@ with st.sidebar:
 
 # --- ANA EKRAN ---
 st.title("📈 BIST Yatırımcı Asistanı")
-st.caption("586 hisse · Komisyon dahil maliyet · Paçal · Kâr analizi")
+st.caption("606 hisse · Komisyon dahil maliyet · Paçal · Kâr analizi")
 
 tab_alis, tab_satis, tab_portfoy, tab_log = st.tabs(["🟢 Alış", "🔴 Satış", "💼 Portföy", "📋 Log"])
 
@@ -744,7 +744,7 @@ with tab_alis:
         hisse_bilgi_goster(hisse)
         fiyat = st.number_input("Başlangıç Fiyatı (TL)", min_value=0.01, value=100.00, step=0.01, format="%.2f")
         st.caption(f"📌 Tick: **{get_tick_size(fiyat):.2f} TL**")
-        butce = st.number_input("Toplam Bütçe (TL)", min_value=1.0, value=10000.0, step=1000.0, format="%.2f")
+        butce = st.number_input("Toplam Bütçe (TL)", min_value=1.0, value=3000000.0, step=1000.0, format="%.2f")
 
         with st.expander("⚙️ Kademe Ayarları (opsiyonel)"):
             kademe_sayisi = st.number_input("Kademe Sayısı", min_value=1, max_value=20, value=1, key="k1")
