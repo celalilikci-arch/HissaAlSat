@@ -717,7 +717,7 @@ def portfoy_ekle_alis(hisse, alis_tarihi, lot, alis_fiyati, alis_maliyeti):
 # --- YAN MENÜ ---
 with st.sidebar:
     st.header("⚙️ Ayarlar")
-    komisyon_orani = st.number_input("Komisyon (Binde)", min_value=0.0, value=2.0, step=0.1) / 1000
+    komisyon_orani = st.number_input("Komisyon (Binde)", min_value=0.0, value=0.5, step=0.1) / 1000
     bsmv_orani = st.number_input("BSMV (%)", min_value=0.0, value=5.0, step=1.0) / 100
     efektif_komisyon = komisyon_orani * (1 + bsmv_orani)
     st.info(f"Net Kesinti: **%{efektif_komisyon*100:.4f}**")
